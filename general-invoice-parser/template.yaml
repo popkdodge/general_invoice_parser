@@ -31,7 +31,7 @@ Resources:
   InvoiceParserStackLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: InvoiceCsvParserLog
+      LogGroupName: GeneralCsvParserLog
 
   ReceivedEmailStorage:
     Type: 'AWS::S3::Bucket'
@@ -244,7 +244,7 @@ Resources:
                         }
                     ]
             }
-      Timeout: 60
+      Timeout: 30
       Environment:
         Variables:
           NSSecrets: !Ref NSSecrets

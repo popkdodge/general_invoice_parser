@@ -2,10 +2,11 @@ version = 0.1
 [default]
 [default.deploy]
 [default.deploy.parameters]
-stack_name = "InvoiceParser2"
+stack_name = "generalInvoiceParser"
 s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-106au7cn3zwxv"
-s3_prefix = "InvoiceParser2"
+s3_prefix = "generalInvoiceParser"
 region = "us-east-1"
 capabilities = "CAPABILITY_IAM"
-parameter_overrides = "EmailPrefix=\"Received\" PDFPrefix=\"PDF\" RecipientsEmail=\"test@robo-gumps.com\" NSSecrets=\"{{resolve:ssm:/winward-invoice-pdf-to-csv-upload-to-ns/key-secrets:1}}\" NSFileCabinetIdPDFUploadFolder=\"12450\" NSFileCabinetIdCSVUploadFolder=\"12449\" NSSandboxProductionMode=\"PRODUCTION\""
+parameter_overrides = "EmailPrefix=\"Received\" PDFPrefix=\"PDF\" NSSecrets=\"{{resolve:ssm:/winward-invoice-pdf-to-csv-upload-to-ns/key-secrets:1}}\" NSFileCabinetIdPDFUploadFolder=\"12450\" NSFileCabinetIdCSVUploadFolder=\"12449\" NSSandboxProductionMode=\"PRODUCTION\""
 image_repositories = ["ExtractAttachmentsFromEmail=570685116845.dkr.ecr.us-east-1.amazonaws.com/invoiceparser29bd1b8b7/extractattachmentsfromemail75706650repo", "ParsePDFFunction=570685116845.dkr.ecr.us-east-1.amazonaws.com/invoiceparser29bd1b8b7/parsepdffunction465fc750repo", "CsvCompileFunction=570685116845.dkr.ecr.us-east-1.amazonaws.com/invoiceparser29bd1b8b7/csvcompilefunction7f01d761repo"]
+confirm_changeset = true
