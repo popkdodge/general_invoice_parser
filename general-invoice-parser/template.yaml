@@ -3,44 +3,269 @@ Transform: AWS::Serverless-2016-10-31
 Description: >
   python3.8
 
-  Sample SAM Template for general-invoice-parser
+  Sample SAM Template for General Invoice
 
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
-Globals:
-  Function:
-    Timeout: 3
-    Tracing: Active
-  Api:
-    TracingEnabled: True
+Parameters:
+  EmailPrefix:
+    Type: String
+    Default: "Received"
+  PDFPrefix:
+    Type: String
+    Default: "PDF"
+  NSSecrets:
+    Type: String
+    Default: winward-invoice-pdf-to-csv-upload-to-ns/key-secrets
+  NSFileCabinetIdPDFUploadFolder:
+    Type: String
+    Default: '838'
+  NSFileCabinetIdCSVUploadFolder:
+    Type: String
+    Default: '634'
+  NSSandboxProductionMode:
+    Type: String
+    Default: 'PRODUCTION'
+
 
 Resources:
-  HelloWorldFunction:
-    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+  InvoiceParserStackLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: InvoiceCsvParserLog
+
+  ReceivedEmailStorage:
+    Type: 'AWS::S3::Bucket'
+
+  SavedInS3Notification:
+    Type: 'AWS::SNS::Topic'
+
+  SavedInS3NotificationPolicy:
+    Type: 'AWS::SNS::TopicPolicy'
+    Properties: 
+      Topics: 
+        - !Ref SavedInS3Notification
+      PolicyDocument:
+        { "Version": "2008-10-17",
+              "Id": "__default_policy_ID",
+              "Statement": [
+                {
+                  "Sid": "__default_statement_ID",
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Service": "ses.amazonaws.com"
+                  },
+                  "Action": "SNS:Publish",
+                  "Resource": [{"Ref": SavedInS3Notification}],
+                }
+              ]
+            }
+  SavedInS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Ref "ReceivedEmailStorage"
+      PolicyDocument:
+        { "Version": "2008-10-17",
+              "Id": "__default_policy_ID",
+              "Statement": [
+                {
+                  "Sid": "__default_statement_ID",
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Service": "ses.amazonaws.com"
+                  },
+                  "Action": "s3:PutObject",
+                  "Resource": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "arn:aws:s3:::",
+                                    {
+                                        "Ref": "ReceivedEmailStorage"
+                                    },
+                                    "/*"
+                                ]
+                            ]
+                        },
+                }
+              ]
+            }
+
+ 
+
+  ErrorNotificationSNS:
+    Type: 'AWS::SNS::Topic'
+    Properties: 
+      DisplayName: 'Gumps Dropship PDF Error'
+  
+  SuccessNotificationSNS:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      DisplayName: 'Gumps Dropship PDF Success'
+
+
+  ExtractAttachmentsFromEmail:
+    Type: AWS::Serverless::Function 
     Properties:
       PackageType: Image
       Architectures:
-        - x86_64
+        - "arm64"
+      Environment:
+        Variables: 
+          BUCKET : !Ref ReceivedEmailStorage
+          SAVE_PDF_PREFIX: !Ref PDFPrefix
+          ERROR_NOTIFICATION_ARN: !Ref ErrorNotificationSNS
+          CSV_SQS_QUEUE: !Ref PDFSplitQueueSQS
       Events:
-        HelloWorld:
-          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+        SNSEvent:
+          Type: SNS
           Properties:
-            Path: /hello
-            Method: get
+            Topic: !Ref SavedInS3Notification
+      Policies: 
+        - SNSCrudPolicy:
+            TopicName: !GetAtt SavedInS3Notification.TopicName
+        - SNSCrudPolicy:
+            TopicName: !GetAtt ErrorNotificationSNS.TopicName
+        - S3CrudPolicy:
+            BucketName: !Ref ReceivedEmailStorage
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt PDFSplitQueueSQS.QueueName
+      EventInvokeConfig:
+        DestinationConfig:
+          OnFailure:
+            Type: SNS
+
     Metadata:
       Dockerfile: Dockerfile
-      DockerContext: ./hello_world
+      DockerContext: ./EmailToPdf
+      DockerTag: python3.8-v1
+  
+  PDFSplitQueueSQS: 
+    Type: AWS::SQS::Queue
+    Properties: 
+      FifoQueue: True
+      VisibilityTimeout: 120
+      RedrivePolicy: 
+        deadLetterTargetArn: !GetAtt PDFDeadLetterQueueSQS.Arn
+        maxReceiveCount: 3
+      ContentBasedDeduplication: True
+      
+  PDFDeadLetterQueueSQS: 
+    Type: AWS::SQS::Queue
+    Properties:
+      FifoQueue: True
+
+
+
+  CSVCompileQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt CSVDeadLetterQueueSQS.Arn
+        maxReceiveCount: 3
+  
+  CSVDeadLetterQueueSQS:
+    Type: AWS::SQS::Queue
+
+  ErrorStorageBucket:
+    Type: 'AWS::S3::Bucket'
+  ParsePDFFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      Timeout: 60
+      PackageType: Image
+      Architectures:
+        - "arm64"
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt PDFSplitQueueSQS.Arn
+            BatchSize: 1
+
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref ReceivedEmailStorage
+        - S3CrudPolicy:
+            BucketName: !Ref ErrorStorageBucket
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt CSVCompileQueue.QueueName
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt ErrorNotificationSNS.TopicName
+        - {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                            "Sid": "VisualEditor0",
+                            "Effect": "Allow",
+                            "Action": [
+                                "ssm:DescribeParameters",
+                                "ssm:GetParametersByPath",
+                                "ssm:GetParameters",
+                                "ssm:GetParameter"
+                            ],
+                            "Resource": "*"
+                        }
+                    ]
+            }
+      Environment:
+        Variables:
+          NSSecrets: !Ref NSSecrets
+          BUCKET_NAME_ERRORS: !Ref ErrorStorageBucket
+          CSV_SQS_QUEUE: !Ref CSVCompileQueue
+          ERROR_NOTIFICATION_ARN: !Ref ErrorNotificationSNS
+          UPLOAD_PDF_FOLDER_INTERNAL_ID: !Ref NSFileCabinetIdPDFUploadFolder
+          UPLOAD_CSV_FOLDER_INTERNAL_ID: !Ref NSFileCabinetIdCSVUploadFolder
+          NSSandboxProductionMode: !Ref NSSandboxProductionMode
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./PdfParser
+      DockerTag: python3.8-v1      
+  
+  CsvCompileFunction:
+    Type: AWS::Serverless::Function
+    
+    Properties:
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt SuccessNotificationSNS.TopicName
+        - {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                            "Sid": "VisualEditor0",
+                            "Effect": "Allow",
+                            "Action": [
+                                "ssm:DescribeParameters",
+                                "ssm:GetParametersByPath",
+                                "ssm:GetParameters",
+                                "ssm:GetParameter"
+                            ],
+                            "Resource": "*"
+                        }
+                    ]
+            }
+      Timeout: 60
+      Environment:
+        Variables:
+          NSSecrets: !Ref NSSecrets
+          CSV_SQS_QUEUE: !Ref CSVCompileQueue
+          SUCCESS_SNS_TOPIC: !Ref SuccessNotificationSNS
+          UPLOAD_PDF_FOLDER_INTERNAL_ID: !Ref NSFileCabinetIdPDFUploadFolder
+          UPLOAD_CSV_FOLDER_INTERNAL_ID: !Ref NSFileCabinetIdCSVUploadFolder
+          NSSandboxProductionMode: !Ref NSSandboxProductionMode
+      PackageType: Image
+      Architectures:
+        - arm64
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt CSVCompileQueue.Arn
+            BatchSize: 45
+            MaximumBatchingWindowInSeconds: 300
+
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./CsvCompiler
       DockerTag: python3.8-v1
 
-Outputs:
-  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
-  # Find out more about other implicit resources you can reference within SAM
-  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
-  HelloWorldApi:
-    Description: "API Gateway endpoint URL for Prod stage for Hello World function"
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello/"
-  HelloWorldFunction:
-    Description: "Hello World Lambda Function ARN"
-    Value: !GetAtt HelloWorldFunction.Arn
-  HelloWorldFunctionIamRole:
-    Description: "Implicit IAM Role created for Hello World function"
-    Value: !GetAtt HelloWorldFunctionRole.Arn
