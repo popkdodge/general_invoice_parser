@@ -269,3 +269,41 @@ Resources:
       DockerContext: ./CsvCompiler
       DockerTag: python3.8-v1
 
+  GumpsDocumentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: GumpsDocuments
+      AttributeDefinitions:
+        # The primary key of a DynamoDB table is a combination of a partition key and a sort key.
+        - AttributeName: vendors
+          AttributeType: S
+        - AttributeName: invoice_number
+          AttributeType: S
+        - AttributeName: invoice_date
+          AttributeType: S
+        - AttributeName: po_number
+          AttributeType: S
+
+
+      KeySchema:
+        - AttributeName: vendors
+          KeyType: HASH
+        - AttributeName: invoice_number
+          KeyType: RANGE
+
+      GlobalSecondaryIndexes:
+        -
+          IndexName: po-index
+          KeySchema:
+            - AttributeName: po_number
+              KeyType: HASH
+            - AttributeName: invoice_date
+              KeyType: RANGE
+          Projection:
+            ProjectionType: INCLUDE
+            NonKeyAttributes:
+              - s3_link
+
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
