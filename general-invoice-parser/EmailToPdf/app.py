@@ -116,24 +116,18 @@ def lambda_handler(event, context):
         f.write(base64.b64decode(file_bytes))
         
     temp_pdf_filename = "/tmp/"+file_name
-    list_of_file_name = separate_pdf(temp_pdf_filename)
-    print(list_of_file_name)
-    for file in list_of_file_name:
-        # Append to Queue
-        OBJECT_KEY = SAVE_PDF_PREFIX + "/"+ file.lstrip('tmp/')
-
-
-        s3.upload_file(file, BUCKET_NAME, 
-            OBJECT_KEY,
-            ExtraArgs={'ContentType': content_type}
-            )
-        payload = {
-            "BUCKET": BUCKET_NAME,
-            "KEY": OBJECT_KEY
-                
-        }
-        send_message(payload)
-        print("appending to queue")
+    OBJECT_KEY = file_name
+    s3.upload_file(temp_pdf_filename, BUCKET_NAME, 
+        OBJECT_KEY,
+        ExtraArgs={'ContentType': content_type}
+        )
+    payload = {
+        "BUCKET": BUCKET_NAME,
+        "KEY": OBJECT_KEY
+            
+    }
+    send_message(payload)
+    print("appending to queue")
     response = {
         "STATUS_CODE":200,
         "COMMENTS": "SUCCESS",
