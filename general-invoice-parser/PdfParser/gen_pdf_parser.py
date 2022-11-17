@@ -40,6 +40,8 @@ def extract_fields_from_expense_document(documents_name, list_of_fields):
             }
     return key_fields_value
 
+
+
 def extract_text_from_dictionary(dictionary):
     return dictionary['Text']
 

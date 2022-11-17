@@ -57,76 +57,45 @@ def lambda_handler(event, context):
 
     # Get the service client
     s3 = boto3.client('s3')
-    sns = boto3.client('sns')
+
     # Download object at bucket-name with key-name to tmp.txt
-    
     s3.download_file(BUCKET_NAME, EMAIL_OBJ_KEY , "/tmp/temp.txt")
-    
     with open('/tmp/temp.txt') as f:
         data = f.read()
     
-    message = email.message_from_string(data)
-    attachment = message.get_payload()[1]
-    # None Check For attachments.
-    # assert
-    try:
-        assert attachment.get_content_type() is not None
-        assert attachment.get_content_type() == 'application/pdf'
-    except AssertionError:
-        print(AssertionError)
-        if message.is_multipart():
-            for part in message.walk():
-                ctype = part.get_content_type()
-                cdispo = str(part.get('Content-Disposition'))
+    # Extract the email contents
+    payloads = email.message_from_string(data)
+    # Isolate Content-Type
+    list_of_allowed_content_types = ['application/pdf']
 
-                # skip any text/plain (txt) attachments
-                if ctype == 'text/plain' and 'attachment' not in cdispo:
-                    body = part.get_payload(decode=True)  # decode
-                    break
-        # not multipart - i.e. plain text, no attachments, keeping fingers crossed
-        else:
-            body = message.get_payload(decode=True)
-        response = sns.publish(
-            TargetArn = ERROR_NOTIFICATION_ARN,
-            Subject='Missing Attachments',
-            Message = f"""
-        The following email was received by gumps999@robo-gumps.com , but we were expecting an attachment, please review:
+    # Iterate through the payloads to find content matching the allowed content types
+    for payload in payloads.get_payload():
+        if payload.get_content_type() in list_of_allowed_content_types:
+            print("Following Content-type found:",payload.get_content_type())
+            print('Attachments with the filename:',payload.get_filename(), 'detected!')
+            file_name = payload.get_filename()
+            file_bytes = payload.get_payload()
+            content_type = payload.get_content_type()
 
-            Email Reference:
+            # Save in temp file to be uploaded to S3
+            with open("/tmp/"+file_name, "wb") as f:
+                f.write(base64.b64decode(file_bytes))
+            temp_pdf_filename = "/tmp/"+file_name
 
-                Timestamp: {message['Date']}
-
-                From: {message['From']}
-
-                To: {message['To']}
-
-                Subject: {message['Subject']}
-
-                Body: {body}
-
-
-            """)
-        return "Wrong or None Attachments Error"
-
-    file_name = attachment.get_filename()
-    file_bytes = attachment.get_payload()
-    content_type = attachment.get_content_type()
-    
-    with open("/tmp/"+file_name, "wb") as f:
-        f.write(base64.b64decode(file_bytes))
-        
-    temp_pdf_filename = "/tmp/"+file_name
-    OBJECT_KEY = file_name
-    s3.upload_file(temp_pdf_filename, BUCKET_NAME, 
-        OBJECT_KEY,
-        ExtraArgs={'ContentType': content_type}
-        )
+            # Naming convention for the file to be uploaded to S3
+            OBJECT_KEY = "extracted_fields/" + file_name
+            s3.upload_file(temp_pdf_filename, BUCKET_NAME, 
+                OBJECT_KEY,
+                ExtraArgs={'ContentType': content_type}
+                )
+            print(f"{file_name} is uploaded to S3 bucket {BUCKET_NAME} with key {OBJECT_KEY}")
+            
     payload = {
         "BUCKET": BUCKET_NAME,
         "KEY": OBJECT_KEY
             
     }
-    send_message(payload)
+
     print("appending to queue")
     response = {
         "STATUS_CODE":200,

@@ -2,6 +2,7 @@
 import json
 import  boto3
 from winward_pdf_parser import winward_csv_parser
+from gen_pdf_parser import text_tract_parser
 import json
 import boto3
 import os
@@ -195,6 +196,8 @@ def lambda_handler(event, context):
 
     with open(temp_pdf_filename, 'wb') as f:
         client.download_fileobj(payload["BUCKET"], payload["KEY"],f)
-    print('Downloaded PDF')
+    
+    df = text_tract_parser(payload)
+    
     return event
     
