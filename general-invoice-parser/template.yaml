@@ -25,7 +25,12 @@ Parameters:
   NSSandboxProductionMode:
     Type: String
     Default: 'PRODUCTION'
-
+  GumpsLoggingDDB:
+    Type: String
+    Default: GumpsStacksLog
+  PreProcessingBucket:
+    Type: String
+    Default: preprocessing-bucket-to-be-parsed
 
 Resources:
   InvoiceParserStackLogGroup:
@@ -59,6 +64,8 @@ Resources:
                 }
               ]
             }
+
+
   SavedInS3BucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties: 
@@ -90,7 +97,7 @@ Resources:
               ]
             }
 
- 
+
 
   ErrorNotificationSNS:
     Type: 'AWS::SNS::Topic'
@@ -102,7 +109,62 @@ Resources:
     Properties:
       DisplayName: 'Gumps Dropship PDF Success'
 
+  SavedPdfPreProcessing:
+    Type: 'AWS::S3::Bucket'
+    DependsOn:
+      - ProcessingLambdaPermission
+    Properties:
+      BucketName: !Ref PreProcessingBucket
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: 's3:ObjectCreated:*'
+            Function: !GetAtt ParsePDFFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: pre-processing-bucket/
+                  - Name: suffix
+                    Value: .pdf
 
+  ProcessingLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref ParsePDFFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub 'arn:aws:s3:::${PreProcessingBucket}'
+      SourceAccount: !Ref AWS::AccountId
+      
+  ProcessingLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+        - PolicyName: allowLogging
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - logs:*
+              Resource: arn:aws:logs:*:*:*
+        - PolicyName: getAndDeleteObjects
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - s3:GetObject
+              Resource:  !Sub 'arn:aws:s3:::${PreProcessingBucket}/*'
   ExtractAttachmentsFromEmail:
     Type: AWS::Serverless::Function 
     Properties:
@@ -127,6 +189,8 @@ Resources:
             TopicName: !GetAtt ErrorNotificationSNS.TopicName
         - S3CrudPolicy:
             BucketName: !Ref ReceivedEmailStorage
+        - DynamoDBWritePolicy:
+            TableName: !Ref GumpsLoggingDDB
         - SQSSendMessagePolicy:
             QueueName: !GetAtt PDFSplitQueueSQS.QueueName
       EventInvokeConfig:
@@ -149,12 +213,11 @@ Resources:
         maxReceiveCount: 3
       ContentBasedDeduplication: True
       
+  
   PDFDeadLetterQueueSQS: 
     Type: AWS::SQS::Queue
     Properties:
       FifoQueue: True
-
-
 
   CSVCompileQueue:
     Type: AWS::SQS::Queue
@@ -175,18 +238,16 @@ Resources:
       PackageType: Image
       Architectures:
         - "arm64"
-      Events:
-        SQSEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt PDFSplitQueueSQS.Arn
-            BatchSize: 1
-
+      Role: !GetAtt ProcessingLambdaExecutionRole.Arn
       Policies:
+        - DynamoDBWritePolicy:
+            TableName: !Ref GumpsLoggingDDB
         - S3CrudPolicy:
             BucketName: !Ref ReceivedEmailStorage
         - S3CrudPolicy:
             BucketName: !Ref ErrorStorageBucket
+        - S3CrudPolicy:
+            BucketName: !Ref SavedPdfPreProcessing
         - SQSSendMessagePolicy:
             QueueName: !GetAtt CSVCompileQueue.QueueName
         - SNSPublishMessagePolicy:
@@ -207,6 +268,7 @@ Resources:
                         }
                     ]
             }
+
       Environment:
         Variables:
           NSSecrets: !Ref NSSecrets

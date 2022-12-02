@@ -4,6 +4,26 @@ import json
 import email 
 import os
 from PyPDF2 import PdfFileReader, PdfFileWriter
+from datetime import datetime
+
+def loggings(Name, Event, Info='Info:'):
+    """_summary_: This function is used to log the events in the cloudwatch logs
+
+    Args:
+        Name (_type_): _description_
+        Event (_type_): _description_
+        Info (str, optional): _description_. Defaults to 'Info:'.
+    """
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table(f'GumpsStacksLog') 
+    dt = datetime.now()
+    table.put_item(Item={
+        'Name': Name,
+        'Timestamp': int(datetime.timestamp(dt)),
+        'Event': Event,
+        'Info': 'Info:'
+
+    })
 
 
 def send_message(message):
@@ -53,6 +73,7 @@ def lambda_handler(event, context):
     res = json.loads(records['Sns']['Message'])
     EMAIL_OBJ_KEY = res['receipt']['action']['objectKey']
     BUCKET_NAME = res['receipt']['action']['bucketName']
+    PREPROCESSING_BUCKET = os.environ['SAVED_PDF_BUCKET']
     
 
     # Get the service client
@@ -81,26 +102,20 @@ def lambda_handler(event, context):
             with open("/tmp/"+file_name, "wb") as f:
                 f.write(base64.b64decode(file_bytes))
             temp_pdf_filename = "/tmp/"+file_name
-
+            list_of_file_name = separate_pdf(temp_pdf_filename)
+            for file in list_of_file_name:
             # Naming convention for the file to be uploaded to S3
-            OBJECT_KEY = "extracted_fields/" + file_name
-            s3.upload_file(temp_pdf_filename, BUCKET_NAME, 
-                OBJECT_KEY,
-                ExtraArgs={'ContentType': content_type}
-                )
-            print(f"{file_name} is uploaded to S3 bucket {BUCKET_NAME} with key {OBJECT_KEY}")
-            
-    payload = {
-        "BUCKET": BUCKET_NAME,
-        "KEY": OBJECT_KEY
-            
-    }
+                OBJECT_KEY = "extracted_fields/" + file
+                s3.upload_file(file, PREPROCESSING_BUCKET, 
+                    OBJECT_KEY,
+                    ExtraArgs={'ContentType': content_type}
+                    )
+                #Log successful s3 upload
+                #TODO:
+                    # loggings('EmailToPdf', 'File Uploaded to S3', OBJECT_KEY)
+                loggings('GENERALINVOICEPARSER_EMAILTOPDF', 'SUCCESS_FILE_UPLOADED', "File Uploaded to S3: " + OBJECT_KEY)
+                print(f"{file} is uploaded to S3 bucket {PREPROCESSING_BUCKET} with key {OBJECT_KEY}")
 
-    print("appending to queue")
-    response = {
-        "STATUS_CODE":200,
-        "COMMENTS": "SUCCESS",
-    }
-    return response
+    return None
     
 
