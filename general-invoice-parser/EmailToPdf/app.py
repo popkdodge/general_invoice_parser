@@ -73,7 +73,7 @@ def lambda_handler(event, context):
     res = json.loads(records['Sns']['Message'])
     EMAIL_OBJ_KEY = res['receipt']['action']['objectKey']
     BUCKET_NAME = res['receipt']['action']['bucketName']
-    PREPROCESSING_BUCKET = os.environ['SAVED_PDF_BUCKET']
+    PREPROCESSING_BUCKET = os.environ['PREPROCESSING_BUCKET']
     
 
     # Get the service client
@@ -105,7 +105,7 @@ def lambda_handler(event, context):
             list_of_file_name = separate_pdf(temp_pdf_filename)
             for file in list_of_file_name:
             # Naming convention for the file to be uploaded to S3
-                OBJECT_KEY = "extracted_fields/" + file
+                OBJECT_KEY = "pre-processing-bucket/" + file.lstrip('/tmp/')
                 s3.upload_file(file, PREPROCESSING_BUCKET, 
                     OBJECT_KEY,
                     ExtraArgs={'ContentType': content_type}

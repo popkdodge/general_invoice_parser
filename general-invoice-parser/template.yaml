@@ -111,63 +111,13 @@ Resources:
 
   SavedPdfPreProcessing:
     Type: 'AWS::S3::Bucket'
-    DependsOn:
-      - ProcessingLambdaPermission
     Properties:
       BucketName: !Ref PreProcessingBucket
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: 's3:ObjectCreated:*'
-            Function: !GetAtt ParsePDFFunction.Arn
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: prefix
-                    Value: pre-processing-bucket/
-                  - Name: suffix
-                    Value: .pdf
 
-  ProcessingLambdaPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      Action: 'lambda:InvokeFunction'
-      FunctionName: !Ref ParsePDFFunction
-      Principal: s3.amazonaws.com
-      SourceArn: !Sub 'arn:aws:s3:::${PreProcessingBucket}'
-      SourceAccount: !Ref AWS::AccountId
-      
-  ProcessingLambdaExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-        - Effect: Allow
-          Principal:
-            Service:
-            - lambda.amazonaws.com
-          Action:
-          - sts:AssumeRole
-      Policies:
-        - PolicyName: allowLogging
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-            - Effect: Allow
-              Action:
-              - logs:*
-              Resource: arn:aws:logs:*:*:*
-        - PolicyName: getAndDeleteObjects
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-            - Effect: Allow
-              Action:
-              - s3:GetObject
-              Resource:  !Sub 'arn:aws:s3:::${PreProcessingBucket}/*'
   ExtractAttachmentsFromEmail:
     Type: AWS::Serverless::Function 
     Properties:
+      Timeout: 20
       PackageType: Image
       Architectures:
         - "arm64"
@@ -177,12 +127,15 @@ Resources:
           SAVE_PDF_PREFIX: !Ref PDFPrefix
           ERROR_NOTIFICATION_ARN: !Ref ErrorNotificationSNS
           CSV_SQS_QUEUE: !Ref PDFSplitQueueSQS
+          PREPROCESSING_BUCKET: !Ref PreProcessingBucket
       Events:
         SNSEvent:
           Type: SNS
           Properties:
             Topic: !Ref SavedInS3Notification
       Policies: 
+        - S3CrudPolicy:
+            BucketName: !Ref SavedPdfPreProcessing
         - SNSCrudPolicy:
             TopicName: !GetAtt SavedInS3Notification.TopicName
         - SNSCrudPolicy:
@@ -234,11 +187,23 @@ Resources:
   ParsePDFFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
-      Timeout: 60
+      Timeout: 80
       PackageType: Image
       Architectures:
         - "arm64"
-      Role: !GetAtt ProcessingLambdaExecutionRole.Arn
+      Events:
+        S3Events:
+          Type: S3
+          Properties:
+            Bucket: !Ref SavedPdfPreProcessing
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: pre-processing-bucket/
+                  - Name: suffix
+                    Value: .pdf
       Policies:
         - DynamoDBWritePolicy:
             TableName: !Ref GumpsLoggingDDB
@@ -247,7 +212,7 @@ Resources:
         - S3CrudPolicy:
             BucketName: !Ref ErrorStorageBucket
         - S3CrudPolicy:
-            BucketName: !Ref SavedPdfPreProcessing
+            BucketName: !Ref PreProcessingBucket
         - SQSSendMessagePolicy:
             QueueName: !GetAtt CSVCompileQueue.QueueName
         - SNSPublishMessagePolicy:

@@ -130,16 +130,17 @@ def text_tract_parser(payload):
         if column in list_of_fields:
             df[column] = df[column].apply(extract_text_from_dictionary)
             
-    df = df.rename(columns={'index':"DocumentName","VENDOR_NAME": "vendors", 
-        "INVOICE_RECEIPT_ID": "invoice_number", 
+    df = df.rename(columns={'index':"DocumentName","VENDOR_NAME": "vendor", 
+        "INVOICE_RECEIPT_ID": "invoice_num", 
         'PO_NUMBER': "po_number", "INVOICE_RECEIPT_DATE":"invoice_date"})
 
-    df = df[['vendors','invoice_number','invoice_date', 'po_number','DocumentName',
-        'CUSTOMER_NUMBER', 'ORDER_DATE', 'VENDOR_URL', 'ADDRESS',
-        'ADDRESS_BLOCK', 'AMOUNT_DUE', 'AMOUNT_PAID', 'CITY', 'NAME', 'OTHER',
-        'PAYMENT_TERMS', 'RECEIVER_ADDRESS', 'RECEIVER_NAME', 'STATE', 'STREET',
-        'SUBTOTAL', 'TOTAL', 'VENDOR_ADDRESS', 'VENDOR_PHONE', 'ZIP_CODE']]
-
-    pandas_to_dynamodb(df)
+    #df = df[['vendors','invoice_number','invoice_date', 'po_number','DocumentName',
+    #    'CUSTOMER_NUMBER', 'ORDER_DATE', 'VENDOR_URL', 'ADDRESS',
+    #    'ADDRESS_BLOCK', 'AMOUNT_DUE', 'AMOUNT_PAID', 'CITY', 'NAME', 'OTHER',
+    #    'PAYMENT_TERMS', 'RECEIVER_ADDRESS', 'RECEIVER_NAME', 'STATE', 'STREET',
+    #    'SUBTOTAL', 'TOTAL', 'VENDOR_ADDRESS', 'VENDOR_PHONE', 'ZIP_CODE']]
+    df['invoice_date'] = pd.to_datetime(df['invoice_date'])
+    df['invoice_date'] = df.invoice_date.astype('int64')
+    pandas_to_dynamodb(df, 'general-invoice-data')
 
     return df

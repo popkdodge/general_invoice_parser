@@ -189,15 +189,17 @@ def upload(conn, file_name, folder_internal_id:str, name=None):
 sns = boto3.client('sns')
 def lambda_handler(event, context):
     print(event)
-    payload = json.loads(event['Records'][0]['body'])
+    payload = event['Records'][0]
     print(payload)
+    OBJECT_KEY = payload['s3']['object']['key']
+    BUCKET_NAME = payload['s3']['bucket']['name']
     client = boto3.client('s3')
     temp_pdf_filename = '/tmp/to_be_parse.pdf'
 
     with open(temp_pdf_filename, 'wb') as f:
-        client.download_fileobj(payload["BUCKET"], payload["KEY"],f)
+        client.download_fileobj(BUCKET_NAME, OBJECT_KEY,f)
     
-    df = text_tract_parser(payload)
+    df = text_tract_parser({'BUCKET':BUCKET_NAME,'KEY':OBJECT_KEY})
     
     return event
     
