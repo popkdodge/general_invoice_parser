@@ -3,15 +3,11 @@ import json
 import  boto3
 from winward_pdf_parser import winward_csv_parser
 from gen_pdf_parser import text_tract_parser, pandas_to_dynamodb
-import json
-import boto3
-import os
 from dotenv import load_dotenv
 from datetime import datetime
 from PyPDF2 import PdfFileReader, PdfFileWriter
 import os
 from io import BytesIO
-from netsuitesdk import NetSuiteConnection
 import requests
 import shutil
 from dotenv import load_dotenv
@@ -35,59 +31,6 @@ parameter = secrets_parameter.get_parameter(Name=NSSECRETS, WithDecryption=True)
 get_secrets = parameter['Parameter']['Value']
 secrets = json.loads(get_secrets)
 
-# Production
-NS_CONSUMER_KEY = secrets['NS_CONSUMER_KEY']
-NS_CONSUMER_SECRET = secrets['NS_CONSUMER_SECRET']
-NS_TOKEN_ID = secrets['NS_TOKEN_ID']
-NS_TOKEN_SECRET = secrets['NS_TOKEN_SECRET']
-NETSUITE_ACCOUNT_ID = secrets['NETSUITE_ACCOUNT_ID']
-
-# Sandbox
-TEST_CONSUMER_KEY = secrets['TEST_CONSUMER_KEY']
-TEST_CONSUMER_SECRET = secrets['TEST_CONSUMER_SECRET']
-TEST_TOKEN_ID = secrets['TEST_TOKEN_ID']
-TEST_TOKEN_SECRET = secrets['TEST_TOKEN_SECRET']
-TEST_ACCOUNT_ID = secrets['TEST_ACCOUNT_ID']
-
-
-def connect(modes: str):
-    if modes.lower() == 'test':
-
-        nc = NetSuiteConnection(
-        account=TEST_ACCOUNT_ID,
-        consumer_key=TEST_CONSUMER_KEY,
-        consumer_secret=TEST_CONSUMER_SECRET,
-        token_key=TEST_TOKEN_ID,
-        token_secret=TEST_TOKEN_SECRET,
-        caching=False
-        )
-        try:
-            return nc
-        except:
-            return "Connection Failed :("
-
-    elif modes.lower() == 'production':
-
-        nc = NetSuiteConnection(
-            account=NETSUITE_ACCOUNT_ID,
-            consumer_key=NS_CONSUMER_KEY,
-            consumer_secret=NS_CONSUMER_SECRET,
-            token_key=NS_TOKEN_ID,
-            token_secret=NS_TOKEN_SECRET,
-            caching=False
-        )
-        
-        try:
-            return nc
-
-        except:
-            return "Connection Failed :("
-
-    else:
-        return "Invalid modes selection! Choose either 'production' or 'test'."
-
-    return "Something went wrong. Try again."
-
 def send_message(message):
     sqs_client = boto3.client("sqs", region_name="us-east-1")
     response = sqs_client.send_message(
@@ -96,35 +39,6 @@ def send_message(message):
     )
     return response
 
-def download(conn , file_name):
-    # Input desired file name.
-    # Find Files
-    search_file = None
-    files = conn.files.get_all()
-    print('Searching...')
-    for index, file in enumerate(files):
-        if file['name'] == file_name:
-            print('Files located!')
-            search_file = file
-            
-    if search_file == None:
-        return 'File Searching Failed: Check for Case-sensitivity or proper filenames.'
-            
-    url = search_file.url
-    headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36'}
-    r = requests.get(url, headers=headers, stream = True)
-
-    if r.status_code == 200:
-        # Set decode_content value to True, otherwise the downloaded image file's size will be zero.
-        r.raw.decode_content = True
-        print('Downloading..')
-        # Open a local file with wb ( write binary ) permission.
-        with open(file_name,'wb') as f:
-            shutil.copyfileobj(r.raw, f)
-        
-        return f"Success: Check {file_name} current directory."
-    return "Try Checking Connection. or Reconnect."
-    
 def upload(conn, file_name, folder_internal_id:str, name=None):
     # Require Folder Name.
     # Require path the desired files.
