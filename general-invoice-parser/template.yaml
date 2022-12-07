@@ -114,6 +114,12 @@ Resources:
     Properties:
       BucketName: !Ref PreProcessingBucket
 
+  PdfFileHandel:
+    Type: 'AWS::S3::Bucket'
+
+  ProcessedCSVFileHandel:
+    Type: 'AWS::S3::Bucket'
+
   ExtractAttachmentsFromEmail:
     Type: AWS::Serverless::Function 
     Properties:
@@ -213,6 +219,10 @@ Resources:
             BucketName: !Ref ErrorStorageBucket
         - S3CrudPolicy:
             BucketName: !Ref PreProcessingBucket
+        - S3CrudPolicy:
+            BucketName: !Ref PdfFileHandel
+        - S3CrudPolicy:
+            BucketName: !Ref ProcessedCSVFileHandel
         - SQSSendMessagePolicy:
             QueueName: !GetAtt CSVCompileQueue.QueueName
         - SNSPublishMessagePolicy:
@@ -236,6 +246,8 @@ Resources:
 
       Environment:
         Variables:
+          PDF_FILE_HANDLE_BUCKET: !Ref PdfFileHandel
+          PROCESSED_CSV_FILE_HANDLE_BUCKET: !Ref ProcessedCSVFileHandel
           NSSecrets: !Ref NSSecrets
           BUCKET_NAME_ERRORS: !Ref ErrorStorageBucket
           CSV_SQS_QUEUE: !Ref CSVCompileQueue

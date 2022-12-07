@@ -2,7 +2,7 @@
 import json
 import  boto3
 from winward_pdf_parser import winward_csv_parser
-from gen_pdf_parser import text_tract_parser
+from gen_pdf_parser import text_tract_parser, pandas_to_dynamodb
 import json
 import boto3
 import os
@@ -26,6 +26,8 @@ ERROR_NOTIFICATION_ARN = os.environ.get("ERROR_NOTIFICATION_ARN")
 CSV_SQS_QUEUE = os.environ.get('CSV_SQS_QUEUE')
 BUCKET_NAME_ERRORS = os.environ.get('BUCKET_NAME_ERRORS')
 NSSECRETS = '/winward-invoice-pdf-to-csv-upload-to-ns/key-secrets'
+PROCESSED_CSV_FILE_HANDLE_BUCKET = os.environ.get('PROCESSED_CSV_FILE_HANDLE_BUCKET')
+PDF_FILE_HANDLE_BUCKET = os.environ.get('PDF_FILE_HANDLE_BUCKET')
 
 #Import Secrets
 secrets_parameter = boto3.client('ssm')
@@ -201,5 +203,23 @@ def lambda_handler(event, context):
     
     df = text_tract_parser({'BUCKET':BUCKET_NAME,'KEY':OBJECT_KEY})
     
+    #DOES: save s3 link with new file handle
+    s3_client = boto3.resource('s3')
+    copy_source = {'Bucket': s3BucketName, 'Key': payload['KEY']}
+    # Incase we want to save the file handle in a different bucket
+    # s3_file_handle_bucket = 'file-handle-bucket'
+    s3_client.meta.client.copy(CopySource = copy_source, Bucket = PDF_FILE_HANDLE_BUCKET, Key = file_handle_name)
+
+    #DOES: save s3 location with new file handle
+    df['file_handel_s3_location'] = json.dumps({
+        "KEY":file_handle_name ,
+        "BUCKET":s3BucketName   
+        })
+    #DOES: SAVE TO S3 (renamed)
+    df.to_csv('/tmp/' + file_handle_name_files + '.csv', index=False)
+    s3_client.meta.client.upload_file('/tmp/' + file_handle_name_files + '.csv', PROCESSED_CSV_FILE_HANDLE_BUCKET, file_handle_name_files + '.csv')
+
+    #DOES: SAVE TO DYNAMODB
+    pandas_to_dynamodb(df, 'general-invoice-data')
     return event
     
