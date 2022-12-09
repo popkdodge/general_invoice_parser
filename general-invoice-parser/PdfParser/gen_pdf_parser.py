@@ -143,6 +143,7 @@ def text_tract_parser(payload):
         "KEY":payload['KEY'] ,
         "BUCKET":s3BucketName   
         })
+    df['date'] = pd.to_datetime(int(df['invoice_date']), utc=True).date().strftime('%Y-%m-%d')
     #DOES: add file_handle 
     # file_handle VENDOR_NAME/INV_DATE_INV_NUM_PO_NUM
     df['file_handle_pdf_s3'] = df['vendor'] + '/' + df['invoice_date'].astype(str) + '_' + df['invoice_num'] + '_' + df['po_number']
