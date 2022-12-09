@@ -211,6 +211,20 @@ Resources:
                   - Name: suffix
                     Value: .pdf
       Policies:
+        - {
+        
+            "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": [
+                  "textract:*"
+                ],
+                "Resource": "*"
+              }
+            ]
+          }
+        - DynamoDBCrudPolicy:
+            TableName: "general-invoice-data"
         - DynamoDBWritePolicy:
             TableName: !Ref GumpsLoggingDDB
         - S3CrudPolicy:

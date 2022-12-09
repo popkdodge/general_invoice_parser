@@ -1,6 +1,6 @@
 FROM public.ecr.aws/lambda/python:3.8
 
-COPY app.py requirements.txt winward_pdf_parser.py gen_pdf_parser.py ./
+COPY app.py requirements.txt gen_pdf_parser.py ./
 
 RUN python3.8 -m pip install -r requirements.txt -t .
 

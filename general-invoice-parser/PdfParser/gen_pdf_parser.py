@@ -1,3 +1,57 @@
+import pandas as pd
+import boto3
+import json
+import awswrangler as wr
+from decimal import Decimal
+
+
+list_of_fields = [
+    'INVOICE_RECEIPT_ID',
+    'INVOICE_RECEIPT_DATE',
+    'PO_NUMBER',
+    'VENDOR_NAME'
+]
+
+textractmodule = boto3.client('textract')
+
+def extract_fields_from_expense_document(documents_name, list_of_fields):
+    response = textractmodule.analyze_expense(
+            Document={
+                'S3Object': {
+                    'Bucket': s3BucketName,
+                    'Name': documents_name
+                    }})
+    key_fields_value = {}
+    for field in list_of_fields:
+        key_fields_value[field] = {
+            'Text': None,
+            'Confidence': 0
+        }
+    for fields in response['ExpenseDocuments'][0]['SummaryFields']:
+        if fields['Type']['Text'] in list_of_fields:
+            if fields['Type']['Confidence'] > key_fields_value[fields['Type']['Text']]['Confidence']:
+                key_fields_value[fields['Type']['Text']] = {
+                    'Text': fields['ValueDetection']['Text'],
+                    'Confidence': fields['Type']['Confidence']
+            }
+    return key_fields_value
+def extract_text_from_dictionary(dictionary):
+    return dictionary['Text']
+
+def float_to_decimal(num):
+    return Decimal(str(num))
+
+def pandas_to_dynamodb(df, table_name):
+    df = df.fillna('N/A')
+    # convert any floats to decimals
+    for i in df.columns:
+        datatype = df[i].dtype
+        if datatype == 'float64':
+            df[i] = df[i].apply(float_to_decimal)
+    # write to dynamodb
+    wr.dynamodb.put_df(df=df, table_name=table_name)
+    print('Data written to dynamodb')
+
 def text_tract_parser(payload):
     documents = [
         payload['KEY']
@@ -54,9 +108,11 @@ def text_tract_parser(payload):
     df = pd.DataFrame(extracted_fields).T
 
     df = df.reset_index()
+    print(df.to_dict('records'))
 
     #df.columns = ['file_name', 'INVOICE_RECEIPT_ID', 'INVOICE_RECEIPT_DATE', 'PO_NUMBER',
     #      'VENDOR_NAME', 'CUSTOMER_NUMBER', 'ORDER_DATE', 'VENDOR_URL']
+    
     df = df[['index']+list_of_fields+[x for x in list(df.columns) if x not in list_of_fields + ['index']]]
 
 
@@ -90,7 +146,7 @@ def text_tract_parser(payload):
     #DOES: add file_handle 
     # file_handle VENDOR_NAME/INV_DATE_INV_NUM_PO_NUM
     df['file_handle_pdf_s3'] = df['vendor'] + '/' + df['invoice_date'].astype(str) + '_' + df['invoice_num'] + '_' + df['po_number']
-    file_handle_name_s3 = df['file_handle_pdf'].iloc[0]
+    file_handle_name_s3 = df['file_handle_pdf_s3'].iloc[0]
     file_handle_name_files = file_handle_name_s3.replace('/','_')
     df['file_handle_pdf_filename'] = file_handle_name_s3
 
